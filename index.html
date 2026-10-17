@@ -83,20 +83,19 @@
         </div>
         <div class="muted" id="preview" style="margin-top:6px"></div>
 
+        <label>Date</label>
         <div class="row">
-          <div>
-            <label for="date">Date</label>
-            <input id="date" type="date">
-          </div>
-          <div>
-            <label for="split">Split</label>
-            <select id="split">
-              <option value="even">50/50</option>
-              <option value="Andy">Only Andy's</option>
-              <option value="Jay">Only Jay's</option>
-            </select>
-          </div>
+          <div style="flex:1.4"><select id="dm" aria-label="Month"></select></div>
+          <div style="flex:1"><select id="dd" aria-label="Day"></select></div>
+          <div style="flex:1.2"><select id="dy" aria-label="Year"></select></div>
         </div>
+
+        <label for="split">Split</label>
+        <select id="split">
+          <option value="even">50/50</option>
+          <option value="Andy">Only Andy's</option>
+          <option value="Jay">Only Jay's</option>
+        </select>
 
         <button class="go" id="save">Add expense</button>
         <button class="go" id="cancel" style="display:none;background:var(--bg);color:var(--text);border:1px solid var(--line);margin-top:8px">Cancel editing</button>
@@ -127,6 +126,25 @@
   function fmtDate(s) {
     var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || '');
     return m ? MONTHS[+m[2] - 1] + ' ' + (+m[3]) + ', ' + m[1] : '';
+  }
+  // Month / Day / Year dropdowns (fixed order, independent of the phone's region settings)
+  (function buildDate() {
+    var dm = document.getElementById('dm'), dd = document.getElementById('dd'), dy = document.getElementById('dy');
+    function opt(sel, v, t) { var o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); }
+    opt(dm, '', 'Month'); MONTHS.forEach(function (m, i) { opt(dm, String(i + 1), m); });
+    opt(dd, '', 'Day'); for (var d = 1; d <= 31; d++) opt(dd, String(d), String(d));
+    opt(dy, '', 'Year'); var y0 = new Date().getFullYear(); for (var y = y0 - 1; y <= y0 + 2; y++) opt(dy, String(y), String(y));
+  })();
+  function getDate() {
+    var m = $('dm').value, d = $('dd').value, y = $('dy').value;
+    if (!m || !d || !y) return null;
+    var iso = y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    var t = new Date(+y, +m - 1, +d);
+    return (t.getMonth() === +m - 1 && t.getDate() === +d) ? iso : 'invalid';
+  }
+  function setDate(s) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || '');
+    $('dm').value = m ? String(+m[2]) : ''; $('dd').value = m ? String(+m[3]) : ''; $('dy').value = m ? m[1] : '';
   }
   function today() {
     var d = new Date();
@@ -230,7 +248,7 @@
   });
   $('amount').oninput = updatePreview;
   $('rate').oninput = updatePreview;
-  $('date').value = today();
+  setDate(today());
 
   var editingId = null;
   function setCurrency(c) {
@@ -246,7 +264,7 @@
     setCurrency(e.currency);
     $('amount').value = Number(e.amount).toFixed(2);
     if (e.currency === 'EUR') $('rate').value = Number(e.rate).toFixed(4);
-    $('date').value = e.spent_on || '';
+    setDate(e.spent_on);
     $('split').value = e.split;
     $('save').textContent = 'Save changes';
     $('cancel').style.display = '';
@@ -258,7 +276,7 @@
     editingId = null;
     $('save').textContent = 'Add expense';
     $('cancel').style.display = 'none';
-    $('desc').value = ''; $('amount').value = ''; $('date').value = today(); $('split').value = 'even';
+    $('desc').value = ''; $('amount').value = ''; setDate(today()); $('split').value = 'even';
     setCurrency('CAD');
     updatePreview();
   }
@@ -270,11 +288,13 @@
     if (!desc) return msg('Add a description.', 'err');
     if (!(amt > 0)) return msg('Enter an amount.', 'err');
     if (currency === 'EUR' && !(rt > 0)) return msg('Enter an exchange rate.', 'err');
+    var dt = getDate();
+    if (dt === 'invalid') return msg('That date does not exist.', 'err');
     var btn = $('save'); btn.disabled = true; msg('Saving…');
     var editing = editingId;
     var args = {
       p: key, d: desc, who: payer, cur: currency, amt: amt,
-      rt: currency === 'EUR' ? rt : 1, sp: $('split').value, dt: $('date').value || null
+      rt: currency === 'EUR' ? rt : 1, sp: $('split').value, dt: dt
     };
     if (editing) args.rid = editing;
     rpc(editing ? 'trip_update' : 'trip_add', args).then(function () {

@@ -99,6 +99,7 @@
         </div>
 
         <button class="go" id="save">Add expense</button>
+        <button class="go" id="cancel" style="display:none;background:var(--bg);color:var(--text);border:1px solid var(--line);margin-top:8px">Cancel editing</button>
         <div id="msg"></div>
       </div>
 
@@ -168,6 +169,10 @@
       var sm = document.createElement('small');
       sm.textContent = e.payer + ' paid' + (e.spent_on ? ' · ' + fmtDate(e.spent_on) : '') + (e.split !== 'even' ? ' · only ' + e.split + "'s" : '');
       left.appendChild(sm);
+      var edit = document.createElement('button'); edit.className = 'del'; edit.textContent = 'edit';
+      edit.style.marginRight = '14px';
+      edit.onclick = function () { startEdit(e); };
+      left.appendChild(edit);
       var del = document.createElement('button'); del.className = 'del'; del.textContent = 'delete';
       del.onclick = function () {
         if (!confirm('Delete "' + e.description + '"?')) return;
@@ -227,6 +232,38 @@
   $('rate').oninput = updatePreview;
   $('date').value = today();
 
+  var editingId = null;
+  function setCurrency(c) {
+    currency = c;
+    Array.prototype.forEach.call($('cur').children, function (b) { b.className = b.dataset.v === c ? 'on' : ''; });
+    $('rateBox').style.display = c === 'EUR' ? '' : 'none';
+    updatePreview();
+  }
+  function startEdit(e) {
+    editingId = e.id;
+    setPayer(e.payer);
+    $('desc').value = e.description;
+    setCurrency(e.currency);
+    $('amount').value = Number(e.amount).toFixed(2);
+    if (e.currency === 'EUR') $('rate').value = Number(e.rate).toFixed(4);
+    $('date').value = e.spent_on || '';
+    $('split').value = e.split;
+    $('save').textContent = 'Save changes';
+    $('cancel').style.display = '';
+    msg('Editing "' + e.description + '"');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    updatePreview();
+  }
+  function endEdit() {
+    editingId = null;
+    $('save').textContent = 'Add expense';
+    $('cancel').style.display = 'none';
+    $('desc').value = ''; $('amount').value = ''; $('date').value = today(); $('split').value = 'even';
+    setCurrency('CAD');
+    updatePreview();
+  }
+  $('cancel').onclick = function () { endEdit(); msg(''); };
+
   $('save').onclick = function () {
     var desc = $('desc').value.trim(), amt = parseFloat($('amount').value), rt = parseFloat($('rate').value);
     if (!payer) return msg('Pick who paid.', 'err');
@@ -234,12 +271,17 @@
     if (!(amt > 0)) return msg('Enter an amount.', 'err');
     if (currency === 'EUR' && !(rt > 0)) return msg('Enter an exchange rate.', 'err');
     var btn = $('save'); btn.disabled = true; msg('Saving…');
-    rpc('trip_add', {
+    var editing = editingId;
+    var args = {
       p: key, d: desc, who: payer, cur: currency, amt: amt,
       rt: currency === 'EUR' ? rt : 1, sp: $('split').value, dt: $('date').value || null
-    }).then(function () {
-      btn.disabled = false; $('desc').value = ''; $('amount').value = ''; updatePreview();
-      msg('Added ✓', 'ok'); setTimeout(function () { if ($('msg').textContent === 'Added ✓') msg(''); }, 3000);
+    };
+    if (editing) args.rid = editing;
+    rpc(editing ? 'trip_update' : 'trip_add', args).then(function () {
+      btn.disabled = false;
+      var done = editing ? 'Saved ✓' : 'Added ✓';
+      if (editing) endEdit(); else { $('desc').value = ''; $('amount').value = ''; updatePreview(); }
+      msg(done, 'ok'); setTimeout(function () { if ($('msg').textContent === done) msg(''); }, 3000);
       return refresh();
     }).catch(function (err) { btn.disabled = false; msg(err.message, 'err'); });
   };

@@ -122,6 +122,11 @@
   function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function money(n) { return '$' + Number(n).toFixed(2); }
   function msg(t, c) { var m = $('msg'); m.textContent = t; m.className = c || ''; }
+  var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function fmtDate(s) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || '');
+    return m ? MONTHS[+m[2] - 1] + ' ' + (+m[3]) + ', ' + m[1] : '';
+  }
   function today() {
     var d = new Date();
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -161,7 +166,7 @@
       var left = document.createElement('div');
       left.appendChild(document.createTextNode(e.description));
       var sm = document.createElement('small');
-      sm.textContent = e.payer + ' paid' + (e.spent_on ? ' · ' + e.spent_on : '') + (e.split !== 'even' ? ' · only ' + e.split + "'s" : '');
+      sm.textContent = e.payer + ' paid' + (e.spent_on ? ' · ' + fmtDate(e.spent_on) : '') + (e.split !== 'even' ? ' · only ' + e.split + "'s" : '');
       left.appendChild(sm);
       var del = document.createElement('button'); del.className = 'del'; del.textContent = 'delete';
       del.onclick = function () {

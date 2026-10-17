@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trip Expenses</title>
+<meta name="theme-color" content="#2563eb">
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --text:#1c1f24; --muted:#6b7280; --line:#e2e5ea; --accent:#2563eb; --ok:#15803d; --err:#b91c1c; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#111418; --card:#1b1f26; --text:#eceff4; --muted:#9aa3b0; --line:#2b313b; --accent:#5b8def; --ok:#4ade80; --err:#f87171; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--text); font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width:480px; margin:0 auto; display:flex; flex-direction:column; gap:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; }
+  h1 { font-size:20px; margin:0 0 2px; }
+  .muted { color:var(--muted); font-size:14px; }
+  .balance { font-size:24px; font-weight:650; margin:4px 0; }
+  label { display:block; font-size:13px; color:var(--muted); margin:12px 0 4px; }
+  input, select { width:100%; padding:12px; font-size:16px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--text); }
+  .seg { display:flex; gap:8px; }
+  .seg button { flex:1; padding:12px; font-size:16px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--text); }
+  .seg button.on { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  .row { display:flex; gap:10px; }
+  .row > div { flex:1; }
+  .go { width:100%; margin-top:16px; padding:14px; font-size:17px; font-weight:600; border:0; border-radius:10px; background:var(--accent); color:#fff; }
+  .go:disabled { opacity:.6; }
+  #msg { margin-top:10px; font-size:14px; min-height:18px; }
+  .ok { color:var(--ok); } .err { color:var(--err); }
+  .item { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; padding:10px 0; border-top:1px solid var(--line); }
+  .item:first-of-type { border-top:0; }
+  .item small { color:var(--muted); display:block; }
+  .amt { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .del { background:none; border:0; color:var(--muted); font-size:13px; padding:2px 0 0; text-decoration:underline; }
+  .gate input { margin-top:8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card gate" id="gate" style="display:none">
+    <h1>Trip expenses</h1>
+    <div class="muted">Enter the access key you were given (or open the full shared link).</div>
+    <input id="keyIn" placeholder="Access key" autocomplete="off" autocapitalize="off">
+    <button class="go" id="keyGo">Open</button>
+  </div>
+
+  <div id="app" style="display:none">
+    <div class="wrap">
+      <div class="card">
+        <h1>Trip expenses</h1>
+        <div class="muted">Running balance (all in CAD)</div>
+        <div class="balance" id="balance">Loading…</div>
+        <div class="muted" id="totals"></div>
+      </div>
+
+      <div class="card">
+        <label style="margin-top:0">Paid by</label>
+        <div class="seg" id="payer">
+          <button type="button" data-v="Andy">Andy</button>
+          <button type="button" data-v="Jay">Jay</button>
+        </div>
+
+        <label for="desc">What was it?</label>
+        <input id="desc" placeholder="e.g. Dinner in Cologne" autocomplete="off">
+
+        <label>Currency</label>
+        <div class="seg" id="cur">
+          <button type="button" data-v="CAD" class="on">CAD</button>
+          <button type="button" data-v="EUR">EUR</button>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="amount">Amount</label>
+            <input id="amount" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00">
+          </div>
+          <div id="rateBox" style="display:none">
+            <label for="rate">EUR → CAD rate</label>
+            <input id="rate" type="number" inputmode="decimal" step="0.0001" min="0">
+          </div>
+        </div>
+        <div class="muted" id="preview" style="margin-top:6px"></div>
+
+        <div class="row">
+          <div>
+            <label for="date">Date</label>
+            <input id="date" type="date">
+          </div>
+          <div>
+            <label for="split">Split</label>
+            <select id="split">
+              <option value="even">50/50</option>
+              <option value="Andy">Only Andy's</option>
+              <option value="Jay">Only Jay's</option>
+            </select>
+          </div>
+        </div>
+
+        <button class="go" id="save">Add expense</button>
+        <div id="msg"></div>
+      </div>
+
+      <div class="card">
+        <div class="muted" style="margin-bottom:4px">All entries (<span id="count">0</span>)</div>
+        <div id="list"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  var SUPABASE_URL = 'https://ywhwyjlbmiuvwtmudiuy.supabase.co';
+  // Public anon key: safe to ship. Data is only reachable through RPCs that require the access key.
+  var ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3aHd5amxibWl1dnd0bXVkaXV5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxODk2MTYsImV4cCI6MjEwNzc2NTYxNn0.vAEbsyLMPwR59-FBGyCgz5Iw2xASSictp2phvrXJ2fk';
+  var $ = function (id) { return document.getElementById(id); };
+  var key = '', payer = null, currency = 'CAD', rows = [];
+
+  function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function money(n) { return '$' + Number(n).toFixed(2); }
+  function msg(t, c) { var m = $('msg'); m.textContent = t; m.className = c || ''; }
+  function today() {
+    var d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  function rpc(fn, args) {
+    return fetch(SUPABASE_URL + '/rest/v1/rpc/' + fn, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: ANON, Authorization: 'Bearer ' + ANON },
+      body: JSON.stringify(args)
+    }).then(function (r) {
+      return r.text().then(function (t) {
+        var j = null; try { j = t ? JSON.parse(t) : null; } catch (e) {}
+        if (!r.ok) throw new Error((j && j.message) || ('Request failed (' + r.status + ')'));
+        return j;
+      });
+    });
+  }
+
+  function render() {
+    var paid = { Andy: 0, Jay: 0 }, share = { Andy: 0, Jay: 0 }, total = 0;
+    rows.forEach(function (e) {
+      var c = Number(e.amount_cad);
+      total += c; paid[e.payer] += c;
+      if (e.split === 'even') { share.Andy += c / 2; share.Jay += c / 2; } else { share[e.split] += c; }
+    });
+    var owed = Math.round((paid.Andy - share.Andy) * 100) / 100; // >0: Jay owes Andy
+    $('balance').textContent = Math.abs(owed) < 0.005 ? 'All square'
+      : owed > 0 ? 'Jay owes Andy ' + money(owed) : 'Andy owes Jay ' + money(-owed);
+    $('totals').textContent = 'Total ' + money(total) + ' · Andy paid ' + money(paid.Andy) + ' · Jay paid ' + money(paid.Jay);
+
+    $('count').textContent = rows.length;
+    var l = $('list'); l.textContent = '';
+    if (!rows.length) l.textContent = 'Nothing yet.';
+    rows.forEach(function (e) {
+      var row = document.createElement('div'); row.className = 'item';
+      var left = document.createElement('div');
+      left.appendChild(document.createTextNode(e.description));
+      var sm = document.createElement('small');
+      sm.textContent = e.payer + ' paid' + (e.spent_on ? ' · ' + e.spent_on : '') + (e.split !== 'even' ? ' · only ' + e.split + "'s" : '');
+      left.appendChild(sm);
+      var del = document.createElement('button'); del.className = 'del'; del.textContent = 'delete';
+      del.onclick = function () {
+        if (!confirm('Delete "' + e.description + '"?')) return;
+        rpc('trip_delete', { p: key, rid: e.id }).then(refresh).catch(function (err) { msg(err.message, 'err'); });
+      };
+      left.appendChild(del);
+      var right = document.createElement('div'); right.className = 'amt';
+      right.appendChild(document.createTextNode(money(e.amount_cad)));
+      if (e.currency === 'EUR') {
+        var s2 = document.createElement('small'); s2.textContent = '€' + Number(e.amount).toFixed(2) + ' @ ' + Number(e.rate).toFixed(4);
+        right.appendChild(s2);
+      }
+      row.appendChild(left); row.appendChild(right); l.appendChild(row);
+    });
+  }
+
+  function refresh() {
+    return rpc('trip_list', { p: key }).then(function (r) { rows = r || []; render(); }).catch(function (err) {
+      if (/access key/i.test(err.message)) { store('key', ''); showGate('That key was not accepted.'); }
+      else { $('balance').textContent = 'Could not load'; msg(err.message, 'err'); }
+    });
+  }
+
+  function showGate(note) {
+    $('app').style.display = 'none'; $('gate').style.display = '';
+    if (note) $('keyIn').placeholder = note;
+  }
+  function start() {
+    $('gate').style.display = 'none'; $('app').style.display = '';
+    var sp = load('payer');
+    if (sp === 'Andy' || sp === 'Jay') setPayer(sp);
+    refresh();
+    fetch('https://api.frankfurter.dev/v1/latest?base=EUR&symbols=CAD').then(function (r) { return r.json(); })
+      .then(function (j) { if (j && j.rates && j.rates.CAD && !$('rate').value) { $('rate').value = Number(j.rates.CAD).toFixed(4); updatePreview(); } })
+      .catch(function () {});
+  }
+
+  function setPayer(p) {
+    payer = p; store('payer', p);
+    Array.prototype.forEach.call($('payer').children, function (c) { c.className = c.dataset.v === p ? 'on' : ''; });
+  }
+  Array.prototype.forEach.call($('payer').children, function (b) { b.onclick = function () { setPayer(b.dataset.v); }; });
+
+  function updatePreview() {
+    var a = parseFloat($('amount').value), rt = parseFloat($('rate').value);
+    $('preview').textContent = (currency === 'EUR' && a > 0 && rt > 0) ? '≈ ' + money(a * rt) + ' CAD' : '';
+  }
+  Array.prototype.forEach.call($('cur').children, function (btn) {
+    btn.onclick = function () {
+      currency = btn.dataset.v;
+      Array.prototype.forEach.call($('cur').children, function (c) { c.className = c === btn ? 'on' : ''; });
+      $('rateBox').style.display = currency === 'EUR' ? '' : 'none';
+      updatePreview();
+    };
+  });
+  $('amount').oninput = updatePreview;
+  $('rate').oninput = updatePreview;
+  $('date').value = today();
+
+  $('save').onclick = function () {
+    var desc = $('desc').value.trim(), amt = parseFloat($('amount').value), rt = parseFloat($('rate').value);
+    if (!payer) return msg('Pick who paid.', 'err');
+    if (!desc) return msg('Add a description.', 'err');
+    if (!(amt > 0)) return msg('Enter an amount.', 'err');
+    if (currency === 'EUR' && !(rt > 0)) return msg('Enter an exchange rate.', 'err');
+    var btn = $('save'); btn.disabled = true; msg('Saving…');
+    rpc('trip_add', {
+      p: key, d: desc, who: payer, cur: currency, amt: amt,
+      rt: currency === 'EUR' ? rt : 1, sp: $('split').value, dt: $('date').value || null
+    }).then(function () {
+      btn.disabled = false; $('desc').value = ''; $('amount').value = ''; updatePreview();
+      msg('Added ✓', 'ok'); setTimeout(function () { if ($('msg').textContent === 'Added ✓') msg(''); }, 3000);
+      return refresh();
+    }).catch(function (err) { btn.disabled = false; msg(err.message, 'err'); });
+  };
+
+  $('keyGo').onclick = function () {
+    var k = $('keyIn').value.trim(); if (!k) return;
+    key = k; store('key', k); start();
+  };
+
+  // Key arrives via the shared link (#k=...) and is then removed from the address bar.
+  (function init() {
+    var m = /[#&]k=([^&]+)/.exec(location.hash);
+    if (m) { store('key', decodeURIComponent(m[1])); try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {} }
+    key = load('key') || '';
+    if (key) start(); else showGate();
+  })();
+</script>
+</body>
+</html>

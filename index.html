@@ -34,6 +34,24 @@
   .amt { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
   .del { background:none; border:0; color:var(--muted); font-size:13px; padding:2px 0 0; text-decoration:underline; }
   .gate input { margin-top:8px; }
+
+  .col { display:flex; flex-direction:column; gap:14px; }
+  body.wide .wrap { max-width:1100px; }
+  .tools { display:flex; gap:8px; margin-bottom:10px; }
+  .mini { padding:0 14px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--text); font-size:14px; white-space:nowrap; }
+  .tscroll { overflow-x:auto; }
+  #tbl { border-collapse:collapse; min-width:960px; width:100%; }
+  #tbl th { text-align:left; font-size:12px; color:var(--muted); font-weight:600; padding:6px 4px; white-space:nowrap; }
+  #tbl th[data-sort] { cursor:pointer; user-select:none; }
+  #tbl td { padding:3px 4px; border-top:1px solid var(--line); vertical-align:middle; }
+  #tbl input, #tbl select { padding:8px; font-size:15px; border-radius:8px; }
+  #tbl tr.filters th { padding:4px; }
+  #tbl tr.bad td { background:rgba(185,28,28,.09); }
+  #tbl input:disabled { opacity:.45; }
+  .cad { font-variant-numeric:tabular-nums; white-space:nowrap; padding:0 6px; display:inline-block; }
+  .st { display:block; font-size:12px; max-width:150px; }
+  .st.muted { color:var(--muted); }
+  .xdel { background:none; border:0; color:var(--muted); font-size:18px; padding:4px 8px; }
 </style>
 </head>
 <body>
@@ -55,6 +73,12 @@
         <div class="muted" id="totals"></div>
       </div>
 
+      <div class="seg" id="tabs">
+        <button type="button" data-v="add" class="on">Add &amp; recent</button>
+        <button type="button" data-v="table">Table</button>
+      </div>
+
+      <div class="col" id="viewAdd">
       <div class="card">
         <label style="margin-top:0">Paid by</label>
         <div class="seg" id="payer">
@@ -107,6 +131,42 @@
         <div class="muted" style="margin-bottom:4px">All entries (<span id="count">0</span>)</div>
         <div id="list"></div>
       </div>
+      </div>
+
+      <div class="card" id="viewTable" style="display:none">
+        <div class="tools">
+          <input id="fq" type="search" placeholder="Search all columns…" autocomplete="off">
+          <button type="button" id="fclear" class="mini">Clear filters</button>
+        </div>
+        <div class="tscroll">
+          <table id="tbl">
+            <thead>
+              <tr>
+                <th data-sort="spent_on" style="min-width:150px">Date <span class="ar"></span></th>
+                <th data-sort="description" style="min-width:210px">Description <span class="ar"></span></th>
+                <th data-sort="payer" style="min-width:95px">Paid by <span class="ar"></span></th>
+                <th data-sort="split" style="min-width:135px">For <span class="ar"></span></th>
+                <th data-sort="currency" style="min-width:85px">Cur <span class="ar"></span></th>
+                <th data-sort="amount" style="min-width:100px">Amount <span class="ar"></span></th>
+                <th data-sort="rate" style="min-width:95px">Rate <span class="ar"></span></th>
+                <th data-sort="amount_cad" style="min-width:90px">CAD <span class="ar"></span></th>
+                <th style="min-width:80px"></th>
+              </tr>
+              <tr class="filters">
+                <th><input id="fdate" placeholder="Filter…" autocomplete="off"></th>
+                <th><input id="fdesc" placeholder="Filter…" autocomplete="off"></th>
+                <th><select id="fpayer"><option value="">All</option><option value="Andy">Andy</option><option value="Jay">Jay</option></select></th>
+                <th><select id="fsplit"><option value="">All</option><option value="even">Both (50/50)</option><option value="Andy">Andy only</option><option value="Jay">Jay only</option></select></th>
+                <th><select id="fcur"><option value="">All</option><option value="CAD">CAD</option><option value="EUR">EUR</option></select></th>
+                <th></th><th></th><th></th><th></th>
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+        <div class="muted" id="tinfo" style="margin-top:8px"></div>
+        <div class="muted">Edit any cell; it saves when you leave it. To add a new expense use the "Add &amp; recent" tab.</div>
+      </div>
     </div>
   </div>
 
@@ -147,7 +207,7 @@
     });
   }
 
-  function render() {
+  function render(skipTable) {
     var paid = { Andy: 0, Jay: 0 }, share = { Andy: 0, Jay: 0 }, total = 0;
     rows.forEach(function (e) {
       var c = Number(e.amount_cad);
@@ -187,6 +247,7 @@
       }
       row.appendChild(left); row.appendChild(right); l.appendChild(row);
     });
+    if (!skipTable && view === 'table') renderTable();
   }
 
   function refresh() {
@@ -204,9 +265,10 @@
     $('gate').style.display = 'none'; $('app').style.display = '';
     var sp = load('payer');
     if (sp === 'Andy' || sp === 'Jay') setPayer(sp);
+    setView(view);
     refresh();
     fetch('https://api.frankfurter.dev/v1/latest?base=EUR&symbols=CAD').then(function (r) { return r.json(); })
-      .then(function (j) { if (j && j.rates && j.rates.CAD && !$('rate').value) { $('rate').value = Number(j.rates.CAD).toFixed(4); updatePreview(); } })
+      .then(function (j) { if (j && j.rates && j.rates.CAD) liveRate = Number(j.rates.CAD); if (j && j.rates && j.rates.CAD && !$('rate').value) { $('rate').value = Number(j.rates.CAD).toFixed(4); updatePreview(); } })
       .catch(function () {});
   }
 
@@ -284,6 +346,177 @@
       msg(done, 'ok'); setTimeout(function () { if ($('msg').textContent === done) msg(''); }, 3000);
       return refresh();
     }).catch(function (err) { btn.disabled = false; msg(err.message, 'err'); });
+  };
+
+  // ---------------- Table view: spreadsheet-style editing, filters, sorting ----------------
+  var view = load('view') === 'table' ? 'table' : 'add';
+  var liveRate = null;
+  var flt = { q: '', date: '', desc: '', payer: '', split: '', cur: '' };
+  var sortKey = 'spent_on', sortDir = -1;
+  var SPLIT_LABEL = { even: 'Both (50/50)', Andy: 'Andy only', Jay: 'Jay only' };
+
+  function setView(v) {
+    view = v; store('view', v);
+    $('viewAdd').style.display = v === 'add' ? '' : 'none';
+    $('viewTable').style.display = v === 'table' ? '' : 'none';
+    document.body.className = v === 'table' ? 'wide' : '';
+    Array.prototype.forEach.call($('tabs').children, function (b) { b.className = b.dataset.v === v ? 'on' : ''; });
+    if (v === 'table') renderTable();
+  }
+  Array.prototype.forEach.call($('tabs').children, function (b) { b.onclick = function () { setView(b.dataset.v); }; });
+
+  function passes(e) {
+    var dt = fmtDate(e.spent_on).toLowerCase();
+    if (flt.q) {
+      var hay = [e.description, e.payer, SPLIT_LABEL[e.split], e.currency, dt, e.spent_on || '', e.amount, e.amount_cad].join(' ').toLowerCase();
+      if (!flt.q.split(/\s+/).every(function (w) { return hay.indexOf(w) >= 0; })) return false;
+    }
+    if (flt.date && (dt + ' ' + (e.spent_on || '')).indexOf(flt.date) < 0) return false;
+    if (flt.desc && e.description.toLowerCase().indexOf(flt.desc) < 0) return false;
+    if (flt.payer && e.payer !== flt.payer) return false;
+    if (flt.split && e.split !== flt.split) return false;
+    if (flt.cur && e.currency !== flt.cur) return false;
+    return true;
+  }
+
+  function sortVal(e, k) {
+    if (k === 'spent_on') return e.spent_on || '';
+    if (k === 'amount' || k === 'amount_cad' || k === 'rate') return Number(e[k]);
+    return String(e[k] || '').toLowerCase();
+  }
+  function cmp(a, b) {
+    var x = sortVal(a, sortKey), y = sortVal(b, sortKey);
+    if (sortKey === 'spent_on') { if (!x && y) return 1; if (x && !y) return -1; } // undated always last
+    var r = x < y ? -1 : x > y ? 1 : 0;
+    if (r === 0) r = a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0;
+    return r * sortDir;
+  }
+
+  function mk(tag, props, f) {
+    var el = document.createElement(tag);
+    Object.keys(props || {}).forEach(function (k) { el[k] = props[k]; });
+    if (f) el.dataset.f = f;
+    return el;
+  }
+  function mkSelect(f, opts, val) {
+    var s = mk('select', {}, f);
+    opts.forEach(function (o) { var op = document.createElement('option'); op.value = o[0]; op.textContent = o[1]; s.appendChild(op); });
+    s.value = val; return s;
+  }
+  function cell(child) { var td = document.createElement('td'); td.appendChild(child); return td; }
+
+  function renderTable() {
+    var tb = $('tbody'); tb.textContent = '';
+    rows.filter(passes).sort(cmp).forEach(function (e) {
+      var tr = document.createElement('tr'); tr.dataset.id = e.id;
+      tr.appendChild(cell(mk('input', { type: 'date', value: e.spent_on || '' }, 'spent_on')));
+      tr.appendChild(cell(mk('input', { type: 'text', value: e.description, autocomplete: 'off' }, 'description')));
+      tr.appendChild(cell(mkSelect('payer', [['Andy', 'Andy'], ['Jay', 'Jay']], e.payer)));
+      tr.appendChild(cell(mkSelect('split', [['even', 'Both (50/50)'], ['Andy', 'Andy only'], ['Jay', 'Jay only']], e.split)));
+      tr.appendChild(cell(mkSelect('currency', [['CAD', 'CAD'], ['EUR', 'EUR']], e.currency)));
+      tr.appendChild(cell(mk('input', { type: 'number', step: '0.01', min: '0', inputMode: 'decimal', value: Number(e.amount).toFixed(2) }, 'amount')));
+      var rate = mk('input', { type: 'number', step: '0.0001', min: '0', inputMode: 'decimal', placeholder: '—' }, 'rate');
+      if (e.currency === 'EUR') rate.value = Number(e.rate).toFixed(4); else rate.disabled = true;
+      tr.appendChild(cell(rate));
+      tr.appendChild(cell(mk('span', { className: 'cad', textContent: money(e.amount_cad) })));
+      var last = document.createElement('td');
+      var del = mk('button', { type: 'button', className: 'xdel', textContent: '×', title: 'Delete this entry' });
+      del.onclick = function () { deleteRow(e.id); };
+      last.appendChild(del); last.appendChild(mk('span', { className: 'st' }));
+      tr.appendChild(last);
+      tb.appendChild(tr);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('#tbl th[data-sort]'), function (th) {
+      th.querySelector('.ar').textContent = th.dataset.sort === sortKey ? (sortDir > 0 ? '▲' : '▼') : '';
+    });
+    tableInfo();
+  }
+
+  function tableInfo() {
+    var list = rows.filter(passes), tot = 0, pa = 0, pj = 0;
+    list.forEach(function (e) { var c = Number(e.amount_cad); tot += c; if (e.payer === 'Andy') pa += c; else pj += c; });
+    $('tinfo').textContent = 'Showing ' + list.length + ' of ' + rows.length + ' · Total ' + money(tot) +
+      ' · Andy paid ' + money(pa) + ' · Jay paid ' + money(pj);
+  }
+
+  function field(tr, f) { return tr.querySelector('[data-f="' + f + '"]'); }
+  function setStatus(tr, text, cls) {
+    var s = tr.querySelector('.st'); s.textContent = text; s.className = 'st ' + (cls || '');
+    tr.classList.toggle('bad', cls === 'err');
+  }
+  function previewRow(tr) {
+    var a = parseFloat(field(tr, 'amount').value), cur = field(tr, 'currency').value;
+    var rt = cur === 'EUR' ? parseFloat(field(tr, 'rate').value) : 1;
+    tr.querySelector('.cad').textContent = (a > 0 && rt > 0) ? money(Math.round(a * rt * 100) / 100) : '—';
+  }
+  function commitRow(tr) {
+    var e = rows.filter(function (x) { return x.id === tr.dataset.id; })[0]; if (!e) return;
+    var v = {
+      d: field(tr, 'description').value.trim(), who: field(tr, 'payer').value, cur: field(tr, 'currency').value,
+      amt: parseFloat(field(tr, 'amount').value), rt: parseFloat(field(tr, 'rate').value),
+      sp: field(tr, 'split').value, dt: field(tr, 'spent_on').value || null
+    };
+    var problem = !v.d ? 'Needs a description' : !(v.amt > 0) ? 'Needs an amount' : (v.cur === 'EUR' && !(v.rt > 0)) ? 'Needs a rate' : '';
+    if (problem) return setStatus(tr, problem, 'err');
+    var rate = v.cur === 'EUR' ? v.rt : 1;
+    if (v.d === e.description && v.who === e.payer && v.cur === e.currency && Math.abs(v.amt - Number(e.amount)) < 0.005 &&
+        Math.abs(rate - Number(e.rate)) < 0.00005 && v.sp === e.split && (v.dt || null) === (e.spent_on || null)) {
+      return setStatus(tr, '');
+    }
+    setStatus(tr, 'Saving…', 'muted');
+    rpc('trip_update', { p: key, rid: e.id, d: v.d, who: v.who, cur: v.cur, amt: v.amt, rt: rate, sp: v.sp, dt: v.dt })
+      .then(function (r) {
+        var nr = Array.isArray(r) ? r[0] : r;
+        if (!nr || !nr.id) return refresh();
+        for (var i = 0; i < rows.length; i++) if (rows[i].id === nr.id) rows[i] = nr;
+        tr.querySelector('.cad').textContent = money(nr.amount_cad);
+        setStatus(tr, 'Saved ✓', 'ok');
+        setTimeout(function () { var s = tr.querySelector('.st'); if (s && s.textContent === 'Saved ✓') setStatus(tr, ''); }, 2500);
+        render(true); tableInfo();
+      })
+      .catch(function (err) { setStatus(tr, 'Not saved: ' + err.message, 'err'); });
+  }
+  function deleteRow(id) {
+    var e = rows.filter(function (x) { return x.id === id; })[0]; if (!e) return;
+    if (!confirm('Delete "' + e.description + '"?')) return;
+    rpc('trip_delete', { p: key, rid: id }).then(refresh).catch(function (err) { alert(err.message); });
+  }
+
+  $('tbody').addEventListener('input', function (ev) {
+    var f = ev.target.dataset.f;
+    if (f === 'amount' || f === 'rate') previewRow(ev.target.closest('tr'));
+  });
+  $('tbody').addEventListener('change', function (ev) {
+    var t = ev.target, tr = t.closest('tr'); if (!tr) return;
+    if (t.dataset.f === 'currency') {
+      var r = field(tr, 'rate');
+      if (t.value === 'EUR') { r.disabled = false; if (!(parseFloat(r.value) > 0) && liveRate) r.value = liveRate.toFixed(4); }
+      else { r.disabled = true; r.value = ''; }
+      previewRow(tr);
+    }
+    commitRow(tr);
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('#tbl th[data-sort]'), function (th) {
+    th.onclick = function () {
+      var k = th.dataset.sort;
+      if (sortKey === k) sortDir = -sortDir;
+      else { sortKey = k; sortDir = (k === 'spent_on' || k === 'amount' || k === 'amount_cad') ? -1 : 1; }
+      renderTable();
+    };
+  });
+  function onFilter() {
+    flt.q = $('fq').value.trim().toLowerCase();
+    flt.date = $('fdate').value.trim().toLowerCase();
+    flt.desc = $('fdesc').value.trim().toLowerCase();
+    flt.payer = $('fpayer').value; flt.split = $('fsplit').value; flt.cur = $('fcur').value;
+    renderTable();
+  }
+  ['fq', 'fdate', 'fdesc'].forEach(function (id) { $(id).oninput = onFilter; });
+  ['fpayer', 'fsplit', 'fcur'].forEach(function (id) { $(id).onchange = onFilter; });
+  $('fclear').onclick = function () {
+    ['fq', 'fdate', 'fdesc', 'fpayer', 'fsplit', 'fcur'].forEach(function (id) { $(id).value = ''; });
+    onFilter();
   };
 
   $('keyGo').onclick = function () {
